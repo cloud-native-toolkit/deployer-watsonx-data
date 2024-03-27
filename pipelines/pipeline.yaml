@@ -6,6 +6,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: '20'
 spec:
+  workspaces:
+    - name: ws
   params:
     - default: a65ac528-bbca-1425-8d07-fde9e2f1ff70
       name: IBM_ENTITLEMENT_KEY_ID
@@ -27,6 +29,10 @@ spec:
       description: Cloud Pak for Data operator namespace
       name: PROJECT_CPD_OPS
       type: string
+    - name: ibm-entitlement-key
+      description: "IBM entitlement key. If not set, will use secret manager."
+      type: string
+      default: "false"
     - default: zen
       description: Cloud Pak for Data operands namespace
       name: PROJECT_CPD_INSTANCE
@@ -36,15 +42,60 @@ spec:
       name: VERSION
       type: string
   tasks:
-    - name: get-entitlement-key
+    - name: get-ibm-entitlement-key
       params:
         - name: KEY_ID
           value: $(params.IBM_ENTITLEMENT_KEY_ID)
-        - name: SECRETS_MANAGER_ENDPOINT_URL
+        - name: IBM_SECRETS_MANAGER_ENDPOINT
           value: $(params.IBM_SECRETS_MANAGER_ENDPOINT)
       taskRef:
         kind: Task
         name: ibmcloud-secrets-manager-get
+    - name: set-retrieved-entitlement-key
+      when:
+        - input: "$(params.ibm-entitlement-key)"
+          operator: in
+          values: ["false"]
+      runAfter:
+        - get-ibm-entitlement-key
+      params:
+        - name: retrieved-entitlement-key
+          value: $(tasks.get-ibm-entitlement-key.results.secret-value)
+      workspaces:
+        - name: ws
+      taskSpec:
+        workspaces:
+          - name: ws
+        params:
+          - name: retrieved-entitlement-key
+        steps:
+          - name: set-entitlement-key
+            image: quay.io/openshift/origin-cli:4.10
+            script: |
+              #!/usr/bin/env bash
+              echo $(params.retrieved-entitlement-key)
+              echo $(params.retrieved-entitlement-key) > $(workspaces.ws.path)/ek.dat
+              echo "ek.dat created"
+              exit
+    - name: set-provided-entitlement-key
+      workspaces:
+        - name: ws
+      params:
+        - name: provided-entitlement-key
+          value: "$(params.ibm-entitlement-key)"
+      taskSpec:
+        workspaces:
+          - name: ws
+        params:
+          - name: provided-entitlement-key
+        steps:
+          - name: set-entitlement
+            image: quay.io/openshift/origin-cli:4.10
+            script: |
+              #!/usr/bin/env bash
+              echo $(params.provided-entitlement-key) > $(workspaces.ws.path)/ek.dat
+              echo "ek.dat created"
+              exit    
     - name: set-up-env
       params:
         - name: IMAGE_TAG
@@ -85,9 +136,6 @@ spec:
             export STG_CLASS_BLOCK=$(params.STORAGE_CLASS_BLOCK)
 
             export STG_CLASS_FILE=$(params.STORAGE_CLASS_FILE)
-             
-            export
-            IBM_ENTITLEMENT_KEY=$(tasks.get-entitlement-key.results.secret-value)
 
             export VERSION=4.7.0
 
@@ -96,13 +144,13 @@ spec:
 
             cat $(pwd)/ibm-lh-manage/.ibm-lh-manage-utils/ibm-lh-manage.env 
       runAfter:
-        - get-entitlement-key
+        - set-provided-entitlement-key
+        - set-retrieved-entitlement-key
       taskRef:
         kind: Task
         name: ibm-lakehouse-manage
       workspaces:
-        - name: manifest-dir
-          workspace: shared
+        - name: ws
     - name: add-global-pull-secret
       params:
         - name: IMAGE_TAG
@@ -173,8 +221,7 @@ spec:
         kind: Task
         name: ibm-lakehouse-manage
       workspaces:
-        - name: manifest-dir
-          workspace: shared
+        - name: ws
     - name: install
       params:
         - name: IMAGE_TAG
@@ -231,8 +278,7 @@ spec:
         name: ibm-lakehouse-manage
       timeout: 4h0m0s
       workspaces:
-        - name: manifest-dir
-          workspace: shared
+        - name: ws
     - name: get-cpd-instance-details
       params:
         - name: IMAGE_TAG
@@ -240,6 +286,9 @@ spec:
         - name: SCRIPT
           value: >-
             source $(pwd)/ibm-lh-manage/.ibm-lh-manage-utils/ibm-lh-manage.env
+
+            export IBM_ENTITLEMENT_KEY=$(cat $(workspaces.manifest-dir.path)/ek.dat)
+
 
             /opt/ansible/bin/get-cpd-instance-details
             --cpd_instance_ns=${PROJECT_CPD_INSTANCE}
@@ -250,7 +299,4 @@ spec:
         kind: Task
         name: ibm-lakehouse-manage
       workspaces:
-        - name: manifest-dir
-          workspace: shared
-  workspaces:
-    - name: shared
+        - name: ws

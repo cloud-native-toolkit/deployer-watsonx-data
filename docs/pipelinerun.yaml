@@ -12,7 +12,7 @@ spec:
   serviceAccountName: pipeline
   timeout: 6h0m0s
   workspaces:
-    - name: shared
+    - name: manifest-dir
       volumeClaimTemplate:
         metadata:
           creationTimestamp: null
