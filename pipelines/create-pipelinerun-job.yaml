@@ -18,7 +18,7 @@ spec:
         - |-
           cat <<EOF | oc create -f -
           ---
-          apiVersion: tekton.dev/v1beta1
+          apiVersion: tekton.dev/v1
           kind: PipelineRun
           metadata:
             generateName: deploy-watsonxdata-
@@ -26,13 +26,15 @@ spec:
           spec:
             pipelineRef:
               name: deploy-watsonxdata
-            podTemplate:
-              securityContext:
-                fsGroup: 65532
-            serviceAccountName: pipeline
-            timeout: 6h0m0s
+            taskRunTemplate:
+              serviceAccountName: pipeline
+              podTemplate:
+                securityContext:
+                  fsGroup: 65532
+            timeouts:
+              pipeline: "6h0m0s"
             workspaces:
-              - name: shared
+              - name: manifest-dir
                 volumeClaimTemplate:
                   metadata:
                     creationTimestamp: null
@@ -45,6 +47,5 @@ spec:
                     storageClassName: ocs-storagecluster-cephfs
                     volumeMode: Filesystem
                   status: {}
-
           EOF
       restartPolicy: OnFailure
