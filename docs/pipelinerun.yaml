@@ -1,3 +1,4 @@
+---
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
@@ -6,11 +7,13 @@ metadata:
 spec:
   pipelineRef:
     name: deploy-watsonxdata
-  podTemplate:
-    securityContext:
-      fsGroup: 65532
-  serviceAccountName: pipeline
-  timeout: 6h0m0s
+  taskRunTemplate:
+    serviceAccountName: pipeline
+    podTemplate:
+      securityContext:
+        fsGroup: 65532
+  timeouts:
+    pipeline: "6h0m0s"
   workspaces:
     - name: manifest-dir
       volumeClaimTemplate:
